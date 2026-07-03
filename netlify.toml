@@ -1,0 +1,8 @@
+# Static site — no build step. Netlify just serves these files.
+[build]
+  publish = "."
+  command = ""
+
+# The Python tools are for local use only; don't let Netlify try to process them.
+[build.processing]
+  skip_processing = true

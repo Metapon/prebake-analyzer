@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Toast pre-bake analyzer</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Toast pre-bake analyzer</h1>
+    <p class="sub">Upload your POS sales export, then turn the knobs. It finds when demand is dense
+      enough to pre-bake, how often each pre-bake sells fresh, and whether it actually makes money —
+      all in your browser. Nothing is uploaded to any server.</p>
+  </header>
+
+  <!-- 1: upload -->
+  <div class="card">
+    <p class="step">1 &middot; Load sales data</p>
+    <div class="grid g2">
+      <div><label>Upload a POS export (.csv)</label><input type="file" id="file" accept=".csv,text/csv" /></div>
+      <div style="align-self:end"><button class="btn" id="sampleBtn">…or try sample data</button></div>
+    </div>
+    <p class="hint">Needs a timestamp column, plus optional item &amp; quantity columns. Columns are auto-detected.</p>
+    <p id="uploadStatus" class="status"></p>
+  </div>
+
+  <!-- 2: mapping -->
+  <div class="card hidden" id="mapCard">
+    <p class="step">2 &middot; Map your columns</p>
+    <div class="grid g3">
+      <div><label>Timestamp column</label><select id="mDatetime"></select></div>
+      <div><label>Item column (optional)</label><select id="mItem"></select></div>
+      <div><label>Quantity column (optional)</label><select id="mQty"></select></div>
+    </div>
+    <div class="grid g2" style="margin-top:14px">
+      <div><label>Which product to analyze</label><select id="mItemName"></select></div>
+      <div style="align-self:end"><p class="hint" id="rowInfo"></p></div>
+    </div>
+  </div>
+
+  <!-- 3: knobs -->
+  <div class="card hidden" id="knobCard">
+    <p class="step">3 &middot; Your shop &amp; product — drag to update live</p>
+    <div class="knobs">
+      <div class="knob"><div class="top"><span class="name">Freshness window <span class="unit">min</span></span><span class="val" id="fresh_window_out"></span></div><input type="range" id="fresh_window" min="0.5" max="10" step="0.5" value="2"></div>
+      <div class="knob"><div class="top"><span class="name">Oven slots <span class="unit">bake in parallel</span></span><span class="val" id="oven_slots_out"></span></div><input type="range" id="oven_slots" min="1" max="20" step="1" value="8"></div>
+      <div class="knob"><div class="top"><span class="name">Price <span class="unit">THB</span></span><span class="val" id="price_out"></span></div><input type="range" id="price" min="10" max="300" step="1" value="70"></div>
+      <div class="knob"><div class="top"><span class="name">Cost of goods <span class="unit">THB</span></span><span class="val" id="cog_out"></span></div><input type="range" id="cog" min="0" max="150" step="1" value="10"></div>
+      <div class="knob"><div class="top"><span class="name">Wait before walkout <span class="unit">min</span></span><span class="val" id="patience_min_out"></span></div><input type="range" id="patience_min" min="1" max="30" step="1" value="10"></div>
+      <div class="knob"><div class="top"><span class="name">Time to order/serve <span class="unit">min</span></span><span class="val" id="order_service_min_out"></span></div><input type="range" id="order_service_min" min="0" max="5" step="0.5" value="1"></div>
+      <div class="knob"><div class="top"><span class="name">Bake time — fastest <span class="unit">min</span></span><span class="val" id="bake_time_min_out"></span></div><input type="range" id="bake_time_min" min="0.5" max="15" step="0.5" value="6"></div>
+      <div class="knob"><div class="top"><span class="name">Bake time — slowest <span class="unit">min</span></span><span class="val" id="bake_time_max_out"></span></div><input type="range" id="bake_time_max" min="0.5" max="15" step="0.5" value="8"></div>
+      <div class="knob"><div class="top"><span class="name">Open hour <span class="unit">24h</span></span><span class="val" id="open_hour_out"></span></div><input type="range" id="open_hour" min="0" max="23" step="1" value="11"></div>
+      <div class="knob"><div class="top"><span class="name">Close hour <span class="unit">24h</span></span><span class="val" id="close_hour_out"></span></div><input type="range" id="close_hour" min="1" max="24" step="1" value="21"></div>
+      <div class="knob"><div class="top"><span class="name">Min fresh-sale chance to suggest</span><span class="val" id="success_threshold_out"></span></div><input type="range" id="success_threshold" min="0.3" max="0.95" step="0.05" value="0.75"></div>
+      <div class="knob"><div class="top"><span class="name">Simulation runs <span class="unit">accuracy vs speed</span></span><span class="val" id="sims_out"></span></div><input type="range" id="sims" min="20" max="400" step="20" value="120"></div>
+    </div>
+    <div class="rowflex" style="margin-top:14px"><span class="status" id="runStatus"></span></div>
+    <p id="err" class="err"></p>
+  </div>
+
+  <!-- results -->
+  <div id="results" class="hidden">
+    <div id="verdict"></div>
+    <div class="card"><h2>Bottom line (per year)</h2><div class="metrics" id="metrics"></div></div>
+    <div class="card">
+      <h2>When is pre-baking even possible?</h2>
+      <p class="sub" style="margin:-4px 0 12px">Demand must sit in the green band: dense enough to sell fresh,
+        but below the oven ceiling so there's a free slot to pre-bake into.</p>
+      <div class="daybtns" id="dayBtns"></div>
+      <div class="legend">
+        <span><span class="sw" style="border-color:#2a78d6"></span>Toast demand</span>
+        <span><span class="sw" style="border-color:#c0392b;border-top-style:dashed"></span>Oven ceiling</span>
+        <span><span class="sw" style="border-color:#ba7517;border-top-style:dashed"></span>Freshness floor</span>
+      </div>
+      <div style="position:relative;height:300px"><canvas id="chart"></canvas></div>
+    </div>
+    <div class="card"><h2>By day of week</h2><div style="overflow:auto"><table id="dowTable"></table></div></div>
+    <div class="card">
+      <h2>Suggested pre-bake schedule <span id="schedDay" class="sub"></span></h2>
+      <p class="sub" style="margin:-4px 0 12px">Start the bake at the listed time so a fresh toast is ready as the rush hits.</p>
+      <div class="schedwrap"><table id="schedTable"></table></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

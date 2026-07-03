@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.pyc
+python-tools/reports/
+python-tools/data/
+python-tools/inputs.json
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Netlify
+.netlify/
