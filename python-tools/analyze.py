@@ -147,11 +147,25 @@ def build_schedule(lam: np.ndarray, cfg: Config, cap: bool | None = None) -> lis
             q = min(q, int(math.floor(spare)))             # cap at spare capacity
         if q > 0:
             exp_sold = expected_min(mu, q)
+            # Don't ignite all q toasts at once - that grabs q ovens
+            # simultaneously and can starve walk-in customers for the whole
+            # bake time, even though "spare" was only ever an average over
+            # the window. Spread the q starts evenly across the window
+            # (spacing = w/q) so concurrent oven draw from pre-baking stays
+            # within the spare-capacity cap at any instant, not just on
+            # average. See schedule_to_starts, which expands each row this way.
+            spacing = w / q if q > 1 else 0.0
+            start_last = ws - bake + spacing * (q - 1)
+            ready_last = ws + spacing * (q - 1)
             rows.append({
                 "ready_min": ws,
                 "start_min": ws - bake,
                 "ready_clock": cfg.minute_to_clock(ws),
                 "start_clock": cfg.minute_to_clock(ws - bake),
+                "ready_min_last": ready_last,
+                "start_min_last": start_last,
+                "ready_clock_last": cfg.minute_to_clock(ready_last),
+                "start_clock_last": cfg.minute_to_clock(start_last),
                 "qty": q,
                 "arrivals_expected": round(mu, 2),
                 "p_first_sells": round(poisson_sf(1, mu), 3),
@@ -164,16 +178,21 @@ def build_schedule(lam: np.ndarray, cfg: Config, cap: bool | None = None) -> lis
 
 
 def schedule_to_starts(schedule: list[dict], cfg: Config) -> dict:
-    """Map schedule -> {step_index: number of prebakes to START at that step}."""
+    """Map schedule -> {step_index: number of prebakes to START at that step}.
+    Each row's qty is spread one-at-a-time across the row's window (see
+    build_schedule) instead of started all at once, so a big batch doesn't
+    grab many ovens simultaneously and starve walk-in customers."""
     starts = {}
     n_steps = int(cfg.open_minutes / DT)
     for r in schedule:
-        s = r["start_min"]
-        if s < 0:
-            s = 0.0  # can't start before opening; best effort at open
-        step = int(round(s / DT))
-        if 0 <= step < n_steps:
-            starts[step] = starts.get(step, 0) + r["qty"]
+        spacing = cfg.fresh_window / r["qty"] if r["qty"] > 1 else 0.0
+        for i in range(r["qty"]):
+            s = r["start_min"] + spacing * i
+            if s < 0:
+                s = 0.0  # can't start before opening; best effort at open
+            step = int(round(s / DT))
+            if 0 <= step < n_steps:
+                starts[step] = starts.get(step, 0) + 1
     return starts
 
 

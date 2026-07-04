@@ -91,7 +91,16 @@ function buildSchedule(lam, c, cap){
     let q=0; while(poissonSf(q+1,mu)>=c.success_threshold) q++;
     if(cap) q=Math.min(q,Math.floor(spare));
     if(q>0){ const exp=expectedMin(mu,q);
+      // Don't ignite all q toasts at once — that grabs q ovens simultaneously
+      // and can starve walk-in customers for the whole bake time, even though
+      // "spare" was only ever an average over the window. Spread the q starts
+      // evenly across the window (spacing = w/q) so concurrent oven draw from
+      // pre-baking stays within the spare-capacity cap at any instant, not
+      // just on average. See scheduleToStarts, which expands each row this way.
+      const spacing=q>1?w/q:0, startLast=ws-bake+spacing*(q-1), readyLast=ws+spacing*(q-1);
       rows.push({ready_min:ws,start_min:ws-bake,ready_clock:clock(c,ws),start_clock:clock(c,ws-bake),
+        ready_min_last:readyLast,start_min_last:startLast,
+        ready_clock_last:clock(c,readyLast),start_clock_last:clock(c,startLast),
         qty:q,arrivals_expected:Math.round(mu*100)/100,p_first_sells:Math.round(poissonSf(1,mu)*1000)/1000,
         p_marginal_sells:Math.round(poissonSf(q,mu)*1000)/1000,
         exp_sold_fresh:Math.round(exp*100)/100,exp_waste:Math.round((q-exp)*100)/100}); }
@@ -99,9 +108,12 @@ function buildSchedule(lam, c, cap){
   }
   return rows;
 }
-function scheduleToStarts(schedule,c){ const starts={}, n=Math.round(openMinutes(c)/DT);
-  for(const r of schedule){ let s=r.start_min<0?0:r.start_min; const step=Math.round(s/DT);
-    if(step>=0&&step<n) starts[step]=(starts[step]||0)+r.qty; } return starts; }
+function scheduleToStarts(schedule,c){ const starts={}, n=Math.round(openMinutes(c)/DT), w=c.fresh_window;
+  for(const r of schedule){ const spacing=r.qty>1?w/r.qty:0;
+    for(let i=0;i<r.qty;i++){ let s=r.start_min+spacing*i; if(s<0) s=0;
+      const step=Math.round(s/DT);
+      if(step>=0&&step<n) starts[step]=(starts[step]||0)+1; } }
+  return starts; }
 
 /* ---------- 3. Monte-Carlo day simulation ---------- */
 function drawArrivals(lam,c,rng){ const open=openMinutes(c), n=Math.round(open/DT), a=new Array(n);
@@ -316,9 +328,10 @@ function drawDay(res,c){ const day=STATE.day;
         label:it=>it.datasetIndex===0?it.formattedValue+" toasts/min":null}}},
       scales:{y:{beginAtZero:true,title:{display:true,text:"toasts / min"}},x:{ticks:{autoSkip:false,maxRotation:0}}}}});
   const sched=res.schedule.filter(r=>r.day_of_week===day);
+  const range=(a,b)=>a===b?a:`${a}–${b} (1 at a time)`;
   $("schedTable").innerHTML=sched.length?
     `<tr><th>Start baking</th><th>Ready</th><th>Qty</th><th>Expected customers</th><th>Chance it sells fresh</th></tr>`+
-     sched.map(r=>`<tr><td>${r.start_clock}</td><td>${r.ready_clock}</td><td>${r.qty}</td><td>${r.arrivals_expected}</td><td>${Math.round(r.p_marginal_sells*100)}%</td></tr>`).join("")
+     sched.map(r=>`<tr><td>${range(r.start_clock,r.start_clock_last)}</td><td>${range(r.ready_clock,r.ready_clock_last)}</td><td>${r.qty}</td><td>${r.arrivals_expected}</td><td>${Math.round(r.p_marginal_sells*100)}%</td></tr>`).join("")
     :`<tr><td style="color:#6b6a65">No windows this day are dense enough to pre-bake within the freshness limit.</td></tr>`;
 }
 
