@@ -320,9 +320,12 @@ function render(res,c){
   const s=res.summary,g=s.annual_extra_profit;
   const rev=s.policy_annual_revenue-s.baseline_annual_revenue;
   const signed=(n,unit)=>(n>=0?"+":"−")+fmt(Math.abs(n))+unit;
+  // % improvement is only meaningful against a positive baseline - a baseline
+  // that's already zero/negative makes a ratio misleading (or undefined).
+  const pct=(delta,base)=>base>0?`<span class="pctsub"> (${delta>=0?"+":"−"}${(Math.abs(delta)/base*100).toFixed(1)}%)</span>`:"";
   const cards=[["Toasts / day (avg)",fmt(s.avg_per_day),""],
-    ["Revenue uplift / yr (vs. doing nothing)",signed(rev," ฿"),rev>0?"pos":(rev<0?"neg":"")],
-    ["Profit uplift / yr (vs. doing nothing)",signed(g," ฿"),g>0?"pos":(g<0?"neg":"")],
+    ["Revenue uplift / yr (vs. doing nothing)",signed(rev," ฿")+pct(rev,s.baseline_annual_revenue),rev>0?"pos":(rev<0?"neg":"")],
+    ["Profit uplift / yr (vs. doing nothing)",signed(g," ฿")+pct(g,s.baseline_annual_profit),g>0?"pos":(g<0?"neg":"")],
     ["Wasted toasts / yr (pcs)",fmt(s.annual_waste_units),""],
     ["Wasted toast cost / yr",fmt(s.annual_waste_cost)+" ฿",""],
     ["Walk-out sales recovered (vs. doing nothing)",fmt(s.annual_recovered)+"/yr",s.annual_recovered>0?"pos":""],
