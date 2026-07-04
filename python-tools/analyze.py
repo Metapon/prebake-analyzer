@@ -365,9 +365,9 @@ def run_analysis(df: pd.DataFrame, cfg: Config, sims: int = 150, seed: int = 1) 
         lam = profiles[dow]
         demand_chart[dow] = _demand_buckets(lam, cfg)
         candidate = build_schedule(lam, cfg, cap=False)
-        for r in candidate:
-            schedule.append({"day_of_week": dow, **r})
         policy_sched = build_schedule(lam, cfg, cap=True)
+        for r in policy_sched:
+            schedule.append({"day_of_week": dow, **r})
         ev = evaluate_dow(lam, cfg, policy_sched, sims, rng)
         n = counts.get(dow, 0)
         recovered = ev["baseline"]["balked"] - ev["policy"]["balked"]

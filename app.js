@@ -34,13 +34,15 @@ function parseDate(s){ if(s instanceof Date) return s; let d=new Date(s);
 function openMinutes(c){ return (c.close_hour-c.open_hour)*60; }
 function bakeNominal(c){ return (c.bake_time_min+c.bake_time_max)/2; }
 function margin(c){ return c.price-c.cog; }
-function clock(c,m){ const t=Math.round(c.open_hour*60+m); const hh=(Math.floor(t/60))%24, mm=t%60;
+function clock(c,m){ const t=Math.round(c.open_hour*60+m); const floorMod=(a,n)=>((a%n)+n)%n;
+  const hh=floorMod(Math.floor(t/60),24), mm=floorMod(t,60);
   return String(hh).padStart(2,"0")+":"+String(mm).padStart(2,"0"); }
 
 function validate(c){ const e=[];
   if(c.price<=0) e.push("price must be > 0");
   if(c.cog<0) e.push("cost must be >= 0");
   if(c.cog>=c.price) e.push("cost must be less than price");
+  if(c.order_service_min<0) e.push("order/serve time must be >= 0");
   if(!(c.bake_time_min>0 && c.bake_time_max>=c.bake_time_min)) e.push("need 0 < bake min <= bake max");
   if(c.oven_slots<1) e.push("oven slots must be >= 1");
   if(c.fresh_window<=0) e.push("freshness window must be > 0");
@@ -64,7 +66,18 @@ function estimateDemand(rows, c){
   const profiles={};
   for(const dow of DOW_ORDER){ const nd=Math.max(1,perDow[dow].dates.size);
     profiles[dow]=smooth(perDow[dow].sum.map(v=>v/nd),5); }
-  return {profiles, counts:Object.fromEntries(DOW_ORDER.map(d=>[d,perDow[d].dates.size]))};
+  return profiles;
+}
+
+/* how many calendar days of each weekday are in the data, regardless of
+   time-of-day — used to scale a simulated day onto the annual total. Kept
+   separate from estimateDemand's per-dow day count (which is restricted to
+   business hours, since that one only normalizes the demand curve). */
+function dowCounts(rows){
+  const sets={}; DOW_ORDER.forEach(d=>sets[d]=new Set());
+  for(const r of rows){ const d=r.date, dow=DOW_NAMES[d.getDay()];
+    sets[dow].add(d.getFullYear()+"-"+d.getMonth()+"-"+d.getDate()); }
+  return Object.fromEntries(DOW_ORDER.map(d=>[d,sets[d].size]));
 }
 
 /* ---------- 2. pre-bake schedule ---------- */
@@ -152,12 +165,13 @@ function demandBuckets(lam,c,width=10){ const open=openMinutes(c),out=[];
 
 function runAnalysis(rows,c,sims){
   const seed=12345; const rng=mulberry32(seed);
-  const {profiles,counts}=estimateDemand(rows,c);
+  const profiles=estimateDemand(rows,c), counts=dowCounts(rows);
   const by_dow=[],schedule=[],demand_chart={};
   const annual={gain:0,waste_cost:0,recovered:0,base_profit:0,pol_profit:0,base_balk:0,pol_balk:0,prebaked:0,waste_units:0};
   for(const dow of DOW_ORDER){ const lam=profiles[dow]; demand_chart[dow]=demandBuckets(lam,c);
-    const candidate=buildSchedule(lam,c,false); candidate.forEach(r=>schedule.push({day_of_week:dow,...r}));
-    const policy=buildSchedule(lam,c,true); const ev=evaluateDow(lam,c,policy,sims,rng);
+    const candidate=buildSchedule(lam,c,false);
+    const policy=buildSchedule(lam,c,true); policy.forEach(r=>schedule.push({day_of_week:dow,...r}));
+    const ev=evaluateDow(lam,c,policy,sims,rng);
     const n=counts[dow]||0, recovered=ev.base.balked-ev.pol.balked;
     const candUnits=candidate.reduce((s,r)=>s+r.qty,0);
     const candP=candidate.length?candidate.reduce((s,r)=>s+r.p_first_sells,0)/candidate.length:0;
