@@ -255,18 +255,38 @@ def simulate_day(lam: np.ndarray, cfg: Config, starts: dict,
             # make-to-order
             free_idx = np.where(slot_free <= now)[0]
             if len(free_idx):
-                wait = cfg.bake_time_nominal + cfg.order_service_min
-                i = free_idx[0]
-                slot_free[i] = now + rng.uniform(cfg.bake_time_min, cfg.bake_time_max)
-                slot_prebake[i] = False
-                served += 1
-            else:
-                i = int(np.argmin(slot_free))
-                wait = (slot_free[i] - now) + cfg.bake_time_nominal + cfg.order_service_min
-                if wait > cfg.patience_min:
+                wait_now = cfg.bake_time_nominal + cfg.order_service_min
+                if wait_now > cfg.patience_min:
                     balked += 1
                 else:
-                    slot_free[i] = slot_free[i] + rng.uniform(cfg.bake_time_min, cfg.bake_time_max)
+                    i = free_idx[0]
+                    slot_free[i] = now + rng.uniform(cfg.bake_time_min, cfg.bake_time_max)
+                    slot_prebake[i] = False
+                    served += 1
+            else:
+                # No free oven right now. Two ways this customer could still
+                # get fed: (a) queue behind a WALK-IN order for a dedicated
+                # fresh bake once that slot frees, or (b) claim an
+                # already-in-progress SCHEDULED PRE-BAKE once it finishes (no
+                # extra bake needed - it's already cooking). Pick whichever is
+                # sooner; never silently cancel a pre-bake in favor of (a) -
+                # that would throw away real oven output for nothing.
+                walk_idx = [i for i in range(cfg.oven_slots) if not slot_prebake[i]]
+                pre_idx = [i for i in range(cfg.oven_slots) if slot_prebake[i]]
+                i_walk = min(walk_idx, key=lambda i: slot_free[i]) if walk_idx else None
+                i_pre = min(pre_idx, key=lambda i: slot_free[i]) if pre_idx else None
+                wait_walk = ((slot_free[i_walk] - now) + cfg.bake_time_nominal + cfg.order_service_min
+                            if i_walk is not None else float("inf"))
+                wait_pre = (slot_free[i_pre] - now) if i_pre is not None else float("inf")
+                wait = min(wait_walk, wait_pre)
+                if wait > cfg.patience_min:
+                    balked += 1
+                elif wait_pre <= wait_walk:
+                    slot_prebake[i_pre] = False
+                    served += 1
+                    prebaked_sold += 1
+                else:
+                    slot_free[i_walk] = slot_free[i_walk] + rng.uniform(cfg.bake_time_min, cfg.bake_time_max)
                     served += 1
 
     baked = served + waste

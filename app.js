@@ -134,11 +134,25 @@ function simulateDay(c,starts,rng,arrivals){
       if(inv.length){ let mi=0; for(let j=1;j<inv.length;j++) if(inv[j]<inv[mi]) mi=j; inv.splice(mi,1);
         served++; prebakedSold++; continue; }
       let f=-1; for(let i=0;i<slots;i++) if(free[i]<=now){ f=i; break; }
-      if(f>=0){ free[f]=now+c.bake_time_min+(c.bake_time_max-c.bake_time_min)*rng(); served++; }
-      else { let mi=0; for(let i=1;i<slots;i++) if(free[i]<free[mi]) mi=i;
-        const wait=(free[mi]-now)+nominal+c.order_service_min;
+      if(f>=0){ const waitNow=nominal+c.order_service_min;
+        if(waitNow>c.patience_min) balked++;
+        else { free[f]=now+c.bake_time_min+(c.bake_time_max-c.bake_time_min)*rng(); served++; } }
+      else {
+        // No free oven right now. Two ways this customer could still get fed:
+        // (a) queue behind a WALK-IN order for a dedicated fresh bake once that
+        //     slot frees, or (b) claim an already-in-progress SCHEDULED PRE-BAKE
+        //     once it finishes (no extra bake needed - it's already cooking).
+        // Pick whichever is sooner; never silently cancel a pre-bake in favor
+        // of (a) — that would throw away real oven output for nothing.
+        let miWalk=-1,miPre=-1;
+        for(let i=0;i<slots;i++){ if(pre[i]){ if(miPre<0||free[i]<free[miPre]) miPre=i; }
+          else { if(miWalk<0||free[i]<free[miWalk]) miWalk=i; } }
+        const waitWalk=miWalk>=0?(free[miWalk]-now)+nominal+c.order_service_min:Infinity;
+        const waitPre=miPre>=0?(free[miPre]-now):Infinity;
+        const wait=Math.min(waitWalk,waitPre);
         if(wait>c.patience_min) balked++;
-        else { free[mi]=free[mi]+c.bake_time_min+(c.bake_time_max-c.bake_time_min)*rng(); served++; } }
+        else if(waitPre<=waitWalk){ pre[miPre]=false; served++; prebakedSold++; }
+        else { free[miWalk]=free[miWalk]+c.bake_time_min+(c.bake_time_max-c.bake_time_min)*rng(); served++; } }
     }
   }
   const baked=served+waste, revenue=served*c.price;
