@@ -83,6 +83,116 @@
       <p class="sub" style="margin:-4px 0 12px">Start the bake at the listed time so a fresh toast is ready as the rush hits. When a row shows a time range, that's more than one toast — start them one at a time, spread across that range, not all in the oven at once.</p>
       <div class="schedwrap"><table id="schedTable"></table></div>
     </div>
+
+    <div class="card">
+      <details class="howcalc">
+        <summary><h2 style="display:inline">How this is calculated</h2></summary>
+
+        <p class="sub">Everything below runs entirely in your browser on the data you loaded. There
+          are four steps: turn your sales history into a demand curve, turn that curve into a
+          pre-bake schedule, simulate many random days to see what the schedule actually does, then
+          scale the result up to the totals shown above.</p>
+
+        <h3>1 &middot; Estimate demand</h3>
+        <p>For each day of the week, every order in your data is placed into its minute of the
+          business day (11:00&ndash;21:00 by default) and summed, then divided by how many of that
+          weekday appear in your data. That gives an average toasts-per-minute curve for, say, every
+          Saturday. A light 5-minute moving average smooths the curve so one noisy minute doesn't
+          swing the schedule.</p>
+
+        <h3>2 &middot; Build the pre-bake schedule</h3>
+        <p>The day is cut into consecutive blocks, each as long as your <b>Freshness window</b>. For
+          each block:</p>
+        <ol>
+          <li>Add up the demand curve across the block to get its expected number of arrivals
+            (call it <b>&mu;</b>, "mu").</li>
+          <li>Using the Poisson distribution &mdash; the standard model for "how many random
+            customers show up in a fixed span of time" &mdash; find the largest batch size
+            <b>q</b> such that the chance of at least <b>q</b> customers actually arriving is still
+            &ge; your <b>Min fresh-sale chance to suggest</b>. That's the last (most marginal) toast
+            in the batch still clearing your bar for "likely to sell before it goes stale."</li>
+          <li>Cap <b>q</b> at whatever oven capacity is actually spare: over one freshness window,
+            your oven can physically produce <code>oven_slots &times; (freshness_window &divide;
+            average_bake_time)</code> toasts; subtract this block's expected walk-in demand (&mu;)
+            from that, and pre-baking may only use what's left over. Pre-baking never plans to take
+            an oven slot away from a walk-in customer.</li>
+          <li>The batch isn't put in the oven all at once &mdash; its <b>q</b> toasts are started one
+            at a time, spread evenly across the block. Loading them all in together would tie up
+            several ovens simultaneously right when a real customer might walk in; spreading them out
+            keeps the oven's real, moment-to-moment spare capacity in line with what step 3 assumed.</li>
+        </ol>
+
+        <h3>3 &middot; Simulate many random days (Monte Carlo)</h3>
+        <p>For each day of the week, the tool runs <b>Simulation runs</b> independent simulated days,
+          each stepped forward in 15-second increments. Every simulated day draws its own random
+          number of arriving customers each step (Poisson-distributed around the demand curve from
+          step 1) &mdash; and that <i>exact same</i> stream of customers is replayed twice: once
+          for "doing nothing" (bake to order only, no schedule) and once "with pre-baking" (following
+          the schedule from step 2). Using the same customers for both means any difference between
+          the two is down to the strategy, not luck.</p>
+        <p>Within one simulated day, when a customer arrives:</p>
+        <ul>
+          <li>If a pre-baked toast is already sitting ready (not yet stale), they get it immediately
+            &mdash; the oldest one goes first, to minimize waste.</li>
+          <li>Otherwise, if an oven is free right now, they order fresh &mdash; but only if the total
+            bake time plus hand-over time (<b>Time to order/serve</b>) is within their
+            <b>Wait before walkout</b>; otherwise they leave empty-handed.</li>
+          <li>Otherwise every oven is busy. They'll end up with whichever happens first: a
+            scheduled pre-bake finishing (no extra bake needed &mdash; they just get it once it's
+            ready) or a walk-in-style oven slot freeing up (a brand-new bake starts for them once it
+            does). If even the sooner of those two exceeds their patience, they leave without buying
+            (a "walkout" / "balk").</li>
+          <li>Any pre-baked toast that sits unsold past its freshness window is thrown away
+            (<b>waste</b>) &mdash; it cost its ingredients with no revenue to show for it.</li>
+        </ul>
+
+        <h3>4 &middot; Turn simulated days into money, then scale to a total</h3>
+        <p>Each simulated day tallies toasts sold, toasts wasted, and walkouts, then converts that to
+          <b>revenue</b> (toasts sold &times; price) and <b>profit</b> (revenue minus the cost of
+          goods for <i>every</i> toast baked, sold or wasted). Averaging across all simulated runs for
+          a weekday gives that weekday's typical numbers for both scenarios; the gain from pre-baking
+          is simply (profit with pre-baking) &minus; (profit doing nothing).</p>
+        <p>Each weekday's typical numbers are then multiplied by how many times that weekday actually
+          appears in your uploaded data (e.g. if you loaded 120 days, Saturdays show up about 17
+          times) and summed across all seven weekdays to produce the totals in the Bottom Line box
+          above. <b>Note:</b> those totals scale to however much data you loaded, at that same mix of
+          weekdays &mdash; if you upload less than a full year, "per year" really means "at this rate,
+          extrapolated."</p>
+
+        <h3>Terms used above</h3>
+        <dl class="glossary">
+          <dt>Freshness window</dt>
+          <dd>Minutes a baked toast stays sellable. Also sets the length of the planning block used
+            to size each pre-bake batch (step 2).</dd>
+          <dt>Oven slots</dt>
+          <dd>Independent bake positions running in parallel.</dd>
+          <dt>Bake time — fastest / slowest</dt>
+          <dd>The range a single toast's bake time is randomly drawn from, every time one is baked in
+            the simulation.</dd>
+          <dt>Min fresh-sale chance to suggest</dt>
+          <dd>The minimum acceptable chance that the very last toast in a batch sells before its
+            freshness window closes. Higher = smaller, safer batches; lower = bigger batches with
+            more risk of waste.</dd>
+          <dt>Wait before walkout</dt>
+          <dd>The longest total time — oven queue plus baking plus hand-over — a customer tolerates
+            before leaving without buying.</dd>
+          <dt>Time to order/serve</dt>
+          <dd>Hand-over time added on top of baking, for every sale (fresh or pre-baked).</dd>
+          <dt>"Doing nothing" / baseline</dt>
+          <dd>The same simulated customers, but every order is baked fresh with no pre-bake schedule
+            at all — the number pre-baking is measured against.</dd>
+          <dt>Walk-out sales recovered</dt>
+          <dd>(walkouts doing nothing) &minus; (walkouts with pre-baking) — customers who would have
+            left, but got a toast instead.</dd>
+          <dt>Waste</dt>
+          <dd>Pre-baked toasts never sold before their freshness window ran out.</dd>
+          <dt>Fresh-able windows (by-day table)</dt>
+          <dd>Informational only: how many toasts would be worth baking in a block if oven capacity
+            were unlimited. Compare against <b>Safe pre-bake/day</b>, the real, capacity-respecting
+            number the schedule and simulation actually use.</dd>
+        </dl>
+      </details>
+    </div>
   </div>
 </div>
 

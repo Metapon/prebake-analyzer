@@ -63,3 +63,16 @@ th{color:var(--mut);font-weight:600}
 .legend span{display:flex;align-items:center;gap:6px}
 .sw{width:16px;height:0;border-top:2px solid}
 .schedwrap{max-height:320px;overflow:auto;border:1px solid var(--line);border-radius:8px}
+
+/* how-this-is-calculated */
+.howcalc summary{cursor:pointer;list-style:none}
+.howcalc summary::-webkit-details-marker{display:none}
+.howcalc summary::before{content:"▸ ";color:var(--mut);font-size:14px}
+.howcalc[open] summary::before{content:"▾ "}
+.howcalc h3{font-size:15px;font-weight:600;margin:18px 0 6px}
+.howcalc p{font-size:14px;color:#3a3a37;margin:0 0 8px}
+.howcalc ol,.howcalc ul{margin:6px 0 12px;padding-left:22px;font-size:14px;color:#3a3a37}
+.howcalc li{margin:4px 0}
+.glossary{margin:8px 0 0}
+.glossary dt{font-weight:600;margin-top:10px;font-size:14px}
+.glossary dd{margin:2px 0 0;color:var(--mut);font-size:13px}

@@ -397,6 +397,8 @@ def run_analysis(df: pd.DataFrame, cfg: Config, sims: int = 150, seed: int = 1) 
     by_dow, schedule, demand_chart = [], [], {}
     annual = {"gain": 0.0, "waste_cost": 0.0, "recovered_sales": 0.0,
               "baseline_profit": 0.0, "policy_profit": 0.0,
+              "baseline_revenue": 0.0, "policy_revenue": 0.0,
+              "baseline_served": 0.0, "policy_served": 0.0,
               "baseline_balk": 0.0, "policy_balk": 0.0,
               "prebaked_units": 0.0, "waste_units": 0.0}
 
@@ -431,6 +433,10 @@ def run_analysis(df: pd.DataFrame, cfg: Config, sims: int = 150, seed: int = 1) 
         annual["recovered_sales"] += recovered * n
         annual["baseline_profit"] += ev["baseline"]["profit"] * n
         annual["policy_profit"] += ev["policy"]["profit"] * n
+        annual["baseline_revenue"] += ev["baseline"]["revenue"] * n
+        annual["policy_revenue"] += ev["policy"]["revenue"] * n
+        annual["baseline_served"] += ev["baseline"]["served"] * n
+        annual["policy_served"] += ev["policy"]["served"] * n
         annual["baseline_balk"] += ev["baseline"]["balked"] * n
         annual["policy_balk"] += ev["policy"]["balked"] * n
         annual["prebaked_units"] += ev["prebakes_per_day"] * n
@@ -441,11 +447,16 @@ def run_analysis(df: pd.DataFrame, cfg: Config, sims: int = 150, seed: int = 1) 
     summary = {
         "annual_extra_profit_thb": round(annual["gain"]),
         "annual_waste_cost_thb": round(annual["waste_cost"]),
+        "annual_waste_units": round(annual["waste_units"]),
         "annual_sales_recovered": round(annual["recovered_sales"]),
         "annual_roi_multiple": (round(annual["gain"] / annual["waste_cost"], 1)
                                 if annual["waste_cost"] > 1e-9 else None),
         "baseline_annual_profit_thb": round(annual["baseline_profit"]),
         "policy_annual_profit_thb": round(annual["policy_profit"]),
+        "baseline_annual_revenue_thb": round(annual["baseline_revenue"]),
+        "policy_annual_revenue_thb": round(annual["policy_revenue"]),
+        "baseline_annual_sold": round(annual["baseline_served"]),
+        "policy_annual_sold": round(annual["policy_served"]),
         "baseline_annual_walkouts": round(annual["baseline_balk"]),
         "policy_annual_walkouts": round(annual["policy_balk"]),
         "total_toasts": total_toasts, "n_days": n_days,

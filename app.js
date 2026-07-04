@@ -193,7 +193,8 @@ function runAnalysis(rows,c,sims){
   const seed=12345; const rng=mulberry32(seed);
   const profiles=estimateDemand(rows,c), counts=dowCounts(rows);
   const by_dow=[],schedule=[],demand_chart={};
-  const annual={gain:0,waste_cost:0,recovered:0,base_profit:0,pol_profit:0,base_balk:0,pol_balk:0,prebaked:0,waste_units:0};
+  const annual={gain:0,waste_cost:0,recovered:0,base_profit:0,pol_profit:0,base_revenue:0,pol_revenue:0,
+    base_served:0,pol_served:0,base_balk:0,pol_balk:0,prebaked:0,waste_units:0};
   for(const dow of DOW_ORDER){ const lam=profiles[dow]; demand_chart[dow]=demandBuckets(lam,c);
     const candidate=buildSchedule(lam,c,false);
     const policy=buildSchedule(lam,c,true); policy.forEach(r=>schedule.push({day_of_week:dow,...r}));
@@ -208,6 +209,8 @@ function runAnalysis(rows,c,sims){
       roi:ev.roi==null?null:Math.round(ev.roi*10)/10});
     annual.gain+=ev.daily_gain*n; annual.waste_cost+=ev.waste_cost*n; annual.recovered+=recovered*n;
     annual.base_profit+=ev.base.profit*n; annual.pol_profit+=ev.pol.profit*n;
+    annual.base_revenue+=ev.base.revenue*n; annual.pol_revenue+=ev.pol.revenue*n;
+    annual.base_served+=ev.base.served*n; annual.pol_served+=ev.pol.served*n;
     annual.base_balk+=ev.base.balked*n; annual.pol_balk+=ev.pol.balked*n;
     annual.prebaked+=ev.prebakes*n; annual.waste_units+=ev.pol.waste*n;
   }
@@ -215,7 +218,11 @@ function runAnalysis(rows,c,sims){
   const nDays=new Set(rows.map(r=>r.date.getFullYear()+"-"+r.date.getMonth()+"-"+r.date.getDate())).size;
   const summary={avg_per_day:nDays?Math.round(totalToasts/nDays*10)/10:0,
     annual_extra_profit:Math.round(annual.gain),annual_waste_cost:Math.round(annual.waste_cost),
+    annual_waste_units:Math.round(annual.waste_units),
     annual_recovered:Math.round(annual.recovered),
+    baseline_annual_profit:Math.round(annual.base_profit),policy_annual_profit:Math.round(annual.pol_profit),
+    baseline_annual_revenue:Math.round(annual.base_revenue),policy_annual_revenue:Math.round(annual.pol_revenue),
+    baseline_annual_sold:Math.round(annual.base_served),policy_annual_sold:Math.round(annual.pol_served),
     baseline_walkouts:Math.round(annual.base_balk),policy_walkouts:Math.round(annual.pol_balk),
     total_toasts:totalToasts,n_days:nDays};
   return {meta:{capacity_per_min:Math.round(c.oven_slots/bakeNominal(c)*1000)/1000,
@@ -311,10 +318,14 @@ function render(res,c){
   const v=res.verdict;
   $("verdict").innerHTML=`<div class="banner ${v.recommend?'yes':'no'}"><h2>${v.recommend?'✓ ':''}${v.headline}</h2><p>${v.detail}</p></div>`;
   const s=res.summary,g=s.annual_extra_profit;
+  const rev=s.policy_annual_revenue-s.baseline_annual_revenue;
+  const signed=(n,unit)=>(n>=0?"+":"−")+fmt(Math.abs(n))+unit;
   const cards=[["Toasts / day (avg)",fmt(s.avg_per_day),""],
-    ["Extra profit / year",(g>=0?"+":"−")+fmt(Math.abs(g))+" ฿",g>0?"pos":(g<0?"neg":"")],
-    ["Wasted toasts / yr",fmt(s.annual_waste_cost)+" ฿",""],
-    ["Walk-out sales recovered",fmt(s.annual_recovered)+"/yr",s.annual_recovered>0?"pos":""],
+    ["Revenue uplift / yr (vs. doing nothing)",signed(rev," ฿"),rev>0?"pos":(rev<0?"neg":"")],
+    ["Profit uplift / yr (vs. doing nothing)",signed(g," ฿"),g>0?"pos":(g<0?"neg":"")],
+    ["Wasted toasts / yr (pcs)",fmt(s.annual_waste_units),""],
+    ["Wasted toast cost / yr",fmt(s.annual_waste_cost)+" ฿",""],
+    ["Walk-out sales recovered (vs. doing nothing)",fmt(s.annual_recovered)+"/yr",s.annual_recovered>0?"pos":""],
     ["Walk-outs now → plan",fmt(s.baseline_walkouts)+" → "+fmt(s.policy_walkouts),""]];
   $("metrics").innerHTML=cards.map(x=>`<div class="metric"><div class="k">${x[0]}</div><div class="v ${x[2]}">${x[1]}</div></div>`).join("");
   $("dowTable").innerHTML=`<tr><th>Day</th><th>Sold/day</th><th>Fresh-able windows</th><th>Safe pre-bake/day</th><th>Sales saved/day</th><th>Gain/day</th></tr>`+
